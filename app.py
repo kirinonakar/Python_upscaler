@@ -10,22 +10,17 @@ import cv2
 import sys
 sys.setrecursionlimit(2000)
 
+import upscaler_engine
+
 def load_model(model_path):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     try:
-        loader = ModelLoader()
-        model = loader.load_from_file(model_path)
-        
-        if not isinstance(model, ImageModelDescriptor):
-            return None, "지원하지 않는 모델 형식입니다 (spandrel 호환 모델이 아님)."
-
-        model.to(device)
-        model.eval()
+        model = upscaler_engine.load_model(model_path, device)
         return model, device
     except Exception as e:
         return None, str(e)
 
-def process_image(input_image, model_path, scale_type, original_path=None):
+def process_image(input_image, model_path, scale_type, use_tiling=True, original_path=None):
     if input_image is None:
         return None, "이미지를 선택해주세요."
     if not model_path or not os.path.exists(model_path):
@@ -35,51 +30,18 @@ def process_image(input_image, model_path, scale_type, original_path=None):
     if model is None:
         return None, f"모델 로드 실패: {device}"
 
-    # PIL to Tensor
-    img = np.array(input_image)
-    if len(img.shape) == 2: # Grayscale to RGB
-        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-    elif img.shape[2] == 4: # RGBA to RGB
-        img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
-    
-    # Pre-process
-    img_tensor = torch.from_numpy(img).permute(2, 0, 1).float().div(255).unsqueeze(0).to(device)
-
     try:
-        with torch.no_grad():
-            output_tensor = model(img_tensor)
-        
-        # Post-process
-        output = output_tensor.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().numpy()
-        output = (output * 255.0).round().astype(np.uint8)
-        upscaled_pil = Image.fromarray(output)
-        
         # Determine target size
-        orig_w, orig_h = input_image.size
+        target_size = upscaler_engine.get_target_size(input_image.size, scale_type)
+
+        # Use shared engine with target_size
+        upscaled_pil = upscaler_engine.run_upscale(
+            input_image, model, device, 
+            target_size=target_size, 
+            use_tiling=use_tiling
+        )
         
-        if scale_type == "x2":
-            target_w, target_h = orig_w * 2, orig_h * 2
-        elif scale_type == "x3":
-            target_w, target_h = orig_w * 3, orig_h * 3
-        elif scale_type == "x4":
-            target_w, target_h = orig_w * 4, orig_h * 4
-        else:
-            # Pixel Target Scaling
-            pixel_count = 0
-            if "2M" in scale_type: pixel_count = 2_000_000
-            elif "3M" in scale_type: pixel_count = 3_000_000
-            elif "4M" in scale_type: pixel_count = 4_000_000
-            
-            aspect_ratio = orig_w / orig_h
-            target_h = int((pixel_count / aspect_ratio) ** 0.5)
-            target_w = int(target_h * aspect_ratio)
-
-        # Rescale model output to requested size if necessary
-        if upscaled_pil.size != (target_w, target_h):
-            # Using LANCZOS for high-quality resizing
-            upscaled_pil = upscaled_pil.resize((target_w, target_h), Image.Resampling.LANCZOS)
-
-        # ---- 자동 저장 로직 추가 ---- #
+        # Save logic
         save_msg = ""
         if original_path:
             save_dir = os.path.dirname(original_path)
@@ -87,7 +49,6 @@ def process_image(input_image, model_path, scale_type, original_path=None):
             new_filename = f"{base_name}_upscaled.png"
             save_path = os.path.join(save_dir, new_filename)
         else:
-            # 업로드한 이미지의 경우 현재 실행 디렉토리의 'output' 폴더에 저장
             output_dir = os.path.join(os.getcwd(), "output")
             os.makedirs(output_dir, exist_ok=True)
             import datetime
@@ -137,7 +98,7 @@ def get_model_list():
     models = sorted([f for f in files if f.endswith(valid_extensions)])
     return models
 
-def process_with_inputs(input_image, image_path, model_name, scale_type):
+def process_with_inputs(input_image, image_path, model_name, scale_type, use_tiling):
     source_image = None
     orig_path = None
     
@@ -158,7 +119,7 @@ def process_with_inputs(input_image, image_path, model_name, scale_type):
     
     model_dir = get_model_dir()
     full_model_path = os.path.join(model_dir, model_name)
-    return process_image(source_image, full_model_path, scale_type, original_path=orig_path)
+    return process_image(source_image, full_model_path, scale_type, use_tiling=use_tiling, original_path=orig_path)
 
 with gr.Blocks(title="AI Image Upscaler", css=css) as demo:
     model_dir_display = get_model_dir()
@@ -186,6 +147,9 @@ with gr.Blocks(title="AI Image Upscaler", css=css) as demo:
                     value="3M pixel",
                     label="3. 출력 설정 (Scale Options)"
                 )
+                
+                tiling_mode = gr.Checkbox(value=True, label="4. 타일 분할 프로세싱 (512x512 Tile, Overlap)")
+                
                 run_btn = gr.Button("🔥 업스케일 시작", variant="primary", size="lg")
             
             with gr.Column():
@@ -194,7 +158,7 @@ with gr.Blocks(title="AI Image Upscaler", css=css) as demo:
 
         run_btn.click(
             fn=process_with_inputs,
-            inputs=[input_img, input_path, model_dropdown, scale_mode],
+            inputs=[input_img, input_path, model_dropdown, scale_mode, tiling_mode],
             outputs=[output_img, status_text]
         )
 

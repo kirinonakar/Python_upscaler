@@ -1,14 +1,11 @@
 import customtkinter as ctk
 import torch
-from spandrel import ModelLoader, ImageModelDescriptor
 from PIL import Image
-import numpy as np
 import os
-import cv2
 import sys
 import threading
 from tkinterdnd2 import DND_FILES, TkinterDnD
-import re
+import upscaler_engine
 
 # Set recursion limit for deep models
 sys.setrecursionlimit(2000)
@@ -88,6 +85,15 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
             variable=self.scale_var
         )
         self.scale_menu.grid(row=0, column=0, padx=20, pady=10, sticky="ew")
+
+        # Tiling Option
+        self.tiling_var = ctk.BooleanVar(value=True)
+        self.tiling_checkbox = ctk.CTkCheckBox(
+            self.scale_frame, 
+            text="타일 분할 프로세싱 (512x512 Tile, Overlap)",
+            variable=self.tiling_var
+        )
+        self.tiling_checkbox.grid(row=1, column=0, padx=20, pady=(0, 10))
 
         # 3. Drop Target & Preview (Fixed height to prevent clipping)
         self.preview_frame = ctk.CTkFrame(self, fg_color="#1a1a1a", corner_radius=15, height=250)
@@ -218,11 +224,7 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         
         self.set_status(f"⏳ 모델 로딩 중: {model_name}...")
         try:
-            loader = ModelLoader()
-            model = loader.load_from_file(model_path)
-            if not isinstance(model, ImageModelDescriptor): return None
-            model.to(DEVICE)
-            model.eval()
+            model = upscaler_engine.load_model(model_path, DEVICE)
             self.current_model = model
             self.loaded_model_path = model_path
             return model
@@ -247,6 +249,7 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
 
         total = len(self.image_paths)
         scale_type = self.scale_var.get()
+        use_tiling = self.tiling_var.get()
 
         for i, path in enumerate(self.image_paths):
             try:
@@ -254,31 +257,21 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 
                 # Inference Logic
                 image = Image.open(path)
-                img_np = np.array(image)
-                if len(img_np.shape) == 2: img_np = cv2.cvtColor(img_np, cv2.COLOR_GRAY2RGB)
-                elif img_np.shape[2] == 4: img_np = cv2.cvtColor(img_np, cv2.COLOR_RGBA2RGB)
                 
-                img_tensor = torch.from_numpy(img_np).permute(2, 0, 1).float().div(255).unsqueeze(0).to(DEVICE)
-                with torch.no_grad():
-                    output_tensor = model(img_tensor)
+                def progress_cb(curr, tot):
+                    msg = f"🏃 타일 처리 중 ({curr}/{tot})..."
+                    self.after(0, lambda: self.set_status(msg))
+
+                # Determine target size
+                target_size = upscaler_engine.get_target_size(image.size, scale_type)
+
+                upscaled_pil = upscaler_engine.run_upscale(
+                    image, model, DEVICE, 
+                    target_size=target_size,
+                    use_tiling=use_tiling, 
+                    progress_callback=progress_cb if use_tiling else None
+                )
                 
-                output = output_tensor.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().numpy()
-                output = (output * 255.0).round().astype(np.uint8)
-                upscaled_pil = Image.fromarray(output)
-
-                # Resize to target
-                orig_w, orig_h = image.size
-                if scale_type == "x2": target_w, target_h = orig_w * 2, orig_h * 2
-                elif scale_type == "x3": target_w, target_h = orig_w * 3, orig_h * 3
-                elif scale_type == "x4": target_w, target_h = orig_w * 4, orig_h * 4
-                else:
-                    px = 2_000_000 if "2M" in scale_type else (3_000_000 if "3M" in scale_type else 4_000_000)
-                    target_h = int((px / (orig_w/orig_h)) ** 0.5)
-                    target_w = int(target_h * (orig_w/orig_h))
-
-                if upscaled_pil.size != (target_w, target_h):
-                    upscaled_pil = upscaled_pil.resize((target_w, target_h), Image.Resampling.LANCZOS)
-
                 # Save
                 save_path = os.path.join(os.path.dirname(path), f"{os.path.splitext(os.path.basename(path))[0]}_upscaled.png")
                 upscaled_pil.save(save_path, "PNG")
