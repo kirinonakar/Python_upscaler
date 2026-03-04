@@ -87,13 +87,29 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.scale_menu.grid(row=0, column=0, padx=20, pady=10, sticky="ew")
 
         # Tiling Option
+        self.tiling_frame = ctk.CTkFrame(self.scale_frame, fg_color="transparent")
+        self.tiling_frame.grid(row=1, column=0, padx=20, pady=(0, 10), sticky="ew")
+        
         self.tiling_var = ctk.BooleanVar(value=True)
         self.tiling_checkbox = ctk.CTkCheckBox(
-            self.scale_frame, 
-            text="타일 분할 프로세싱 (512x512 Tile, Overlap)",
-            variable=self.tiling_var
+            self.tiling_frame, 
+            text="타일 분할",
+            variable=self.tiling_var,
+            width=100
         )
-        self.tiling_checkbox.grid(row=1, column=0, padx=20, pady=(0, 10))
+        self.tiling_checkbox.grid(row=0, column=0, padx=(0, 10), pady=0)
+
+        self.tile_size_var = ctk.StringVar(value="512")
+        self.tile_size_menu = ctk.CTkSegmentedButton(
+            self.tiling_frame,
+            values=["256", "512"],
+            variable=self.tile_size_var,
+            width=150
+        )
+        self.tile_size_menu.grid(row=0, column=1, padx=10, pady=0)
+        
+        self.label_tile_info = ctk.CTkLabel(self.tiling_frame, text="px (Tile Size)")
+        self.label_tile_info.grid(row=0, column=2, padx=5, pady=0)
 
         # 3. Drop Target & Preview (Fixed height to prevent clipping)
         self.preview_frame = ctk.CTkFrame(self, fg_color="#1a1a1a", corner_radius=15, height=250)
@@ -250,6 +266,7 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         total = len(self.image_paths)
         scale_type = self.scale_var.get()
         use_tiling = self.tiling_var.get()
+        tile_size = int(self.tile_size_var.get())
 
         for i, path in enumerate(self.image_paths):
             try:
@@ -269,6 +286,7 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
                     image, model, DEVICE, 
                     target_size=target_size,
                     use_tiling=use_tiling, 
+                    tile_size=tile_size,
                     progress_callback=progress_cb if use_tiling else None
                 )
                 

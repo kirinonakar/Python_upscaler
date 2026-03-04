@@ -63,6 +63,7 @@ def load_model(model_path, device):
 def process_tiled(img_np, model, device, tile_size=512, overlap=32, progress_callback=None):
     h, w, c = img_np.shape
     scale = getattr(model, 'scale', 4)
+    multiple = 64 # Safe for most models (HAT, SwinIR, etc.)
     
     # Output canvas
     output_h, output_w = h * scale, w * scale
@@ -91,6 +92,13 @@ def process_tiled(img_np, model, device, tile_size=512, overlap=32, progress_cal
             # Extract tile context from padded image
             tile_context = img_padded[y:y + curr_tile_h + 2*overlap, x:x + curr_tile_w + 2*overlap, :]
             
+            # Ensure tile dimensions are multiples of 'multiple'
+            th, tw, _ = tile_context.shape
+            ph = (multiple - th % multiple) % multiple
+            pw = (multiple - tw % multiple) % multiple
+            if ph > 0 or pw > 0:
+                tile_context = cv2.copyMakeBorder(tile_context, 0, ph, 0, pw, cv2.BORDER_REFLECT)
+            
             # Process tile
             tile_tensor = torch.from_numpy(tile_context).permute(2, 0, 1).float().div(255).unsqueeze(0).to(device)
             with torch.no_grad():
@@ -98,7 +106,11 @@ def process_tiled(img_np, model, device, tile_size=512, overlap=32, progress_cal
             
             output_tile = output_tile_tensor.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().numpy()
             
-            # Crop center
+            # Crop padding if applied
+            if ph > 0 or pw > 0:
+                output_tile = output_tile[:output_tile.shape[0]-ph*scale, :output_tile.shape[1]-pw*scale, :]
+
+            # Crop center (the actual tile part we want)
             sy = overlap * scale
             sx = overlap * scale
             ey = sy + curr_tile_h * scale
@@ -115,7 +127,7 @@ def process_tiled(img_np, model, device, tile_size=512, overlap=32, progress_cal
             
     return output
 
-def run_upscale(image, model, device, target_size=None, use_tiling=True, progress_callback=None):
+def run_upscale(image, model, device, target_size=None, use_tiling=True, tile_size=512, progress_callback=None):
     # PIL to Numpy
     img_np = np.array(image)
     if len(img_np.shape) == 2: # Grayscale to RGB
@@ -123,13 +135,27 @@ def run_upscale(image, model, device, target_size=None, use_tiling=True, progres
     elif img_np.shape[2] == 4: # RGBA to RGB
         img_np = cv2.cvtColor(img_np, cv2.COLOR_RGBA2RGB)
     
+    scale = getattr(model, 'scale', 4)
+    multiple = 64
+
     if use_tiling:
-        output_np = process_tiled(img_np, model, device, progress_callback=progress_callback)
+        output_np = process_tiled(img_np, model, device, tile_size=tile_size, progress_callback=progress_callback)
     else:
+        # Pad image to multiple
+        h, w, _ = img_np.shape
+        ph = (multiple - h % multiple) % multiple
+        pw = (multiple - w % multiple) % multiple
+        if ph > 0 or pw > 0:
+            img_np = cv2.copyMakeBorder(img_np, 0, ph, 0, pw, cv2.BORDER_REFLECT)
+
         img_tensor = torch.from_numpy(img_np).permute(2, 0, 1).float().div(255).unsqueeze(0).to(device)
         with torch.no_grad():
             output_tensor = model(img_tensor)
         output_np = output_tensor.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().numpy()
+
+        # Crop padding
+        if ph > 0 or pw > 0:
+            output_np = output_np[:output_np.shape[0]-ph*scale, :output_np.shape[1]-pw*scale, :]
     
     # Convert to PIL
     output_np = (output_np * 255.0).round().astype(np.uint8)

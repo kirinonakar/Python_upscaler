@@ -13,7 +13,8 @@ A powerful and user-friendly image upscaling toolset that supports both **Web (G
   - **Web (Gradio)**: Modern web-based interface with preview capabilities.
 - **Batch Processing**: Speed up your workflow by dropping dozens of images at once.
 - **Flexible Scaling**: Choose between fixed ratios (`x2`, `x3`, `x4`) or target pixel counts (`2M`, `3M`, `4M` pixels).
-- **Tiling & Overlap Support**: Process high-resolution images by splitting them into 512x512 tiles with overlap to avoid VRAM issues and edge artifacts.
+- **Tiling & Overlap Support**: Process high-resolution images by splitting them into tiles (256x256 or 512x512) with overlap to avoid VRAM issues and edge artifacts.
+   - **Note**: In case of HAT model, 256x256 tile size is recommended due to memory limitation.
 - **Auto-Save**: Processed images are automatically saved as high-quality `.png` files in the source folder with an `_upscaled` suffix.
 - **CUDA Optimized**: Leverages NVIDIA GPUs for rapid inference.
 
