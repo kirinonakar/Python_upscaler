@@ -151,7 +151,7 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         if not os.path.exists(model_dir):
             return []
         files = os.listdir(model_dir)
-        valid_extensions = (".pth", ".safetensors")
+        valid_extensions = (".pth", ".safetensors", ".onnx")
         return sorted([f for f in files if f.endswith(valid_extensions)])
 
     def handle_drop(self, event):

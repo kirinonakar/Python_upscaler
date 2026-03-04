@@ -6,7 +6,7 @@ A powerful and user-friendly image upscaling toolset that supports both **Web (G
 
 ## 🚀 Key Features
 
-- **Multi-Model Support**: Use `.pth` and `.safetensors` models seamlessly.
+- **Multi-Model Support**: Use `.pth`, `.safetensors`, and `.onnx` models seamlessly.
 - **Dual Interface**:
   - **Desktop (GUI)**: Drag & Drop multiple images for fast batch processing.
   - **Web (Gradio)**: Modern web-based interface with preview capabilities.
@@ -52,7 +52,7 @@ The web version provides a clean preview and easy access from any browser.
 
 ## ⚙️ Configuration
 
-Create or edit `model_path.txt` in the root directory to specify where your model files (`.pth`, `.safetensors`) are located. If the file is missing, the app will default to its own directory.
+Create or edit `model_path.txt` in the root directory to specify where your model files (`.pth`, `.safetensors`, `.onnx`) are located. If the file is missing, the app will default to its own directory.
 
 **Example `model_path.txt`:**
 ```text

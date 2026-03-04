@@ -5,7 +5,53 @@ from PIL import Image
 from spandrel import ModelLoader, ImageModelDescriptor
 import os
 
+class ONNXModelWrapper:
+    def __init__(self, model_path, device):
+        import onnxruntime as ort
+        
+        providers = ['CPUExecutionProvider']
+        if 'cuda' in str(device):
+            # Check if CUDA provider is available
+            if 'CUDAExecutionProvider' in ort.get_available_providers():
+                providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        
+        self.session = ort.InferenceSession(model_path, providers=providers)
+        self.input_name = self.session.get_inputs()[0].name
+        self.device = device
+        
+        # Try to determine scale
+        self.scale = 4 # Default
+        try:
+            # Metadata check
+            meta = self.session.get_modelmeta().custom_metadata_map
+            if 'scale' in meta:
+                self.scale = int(meta['scale'])
+            else:
+                # Dummy run check
+                dummy_input = np.zeros((1, 3, 64, 64), dtype=np.float32)
+                ort_outs = self.session.run(None, {self.input_name: dummy_input})
+                self.scale = ort_outs[0].shape[2] // 64
+        except Exception as e:
+            print(f"Warning: Could not determine ONNX model scale, defaulting to 4. Error: {e}")
+
+    def __call__(self, x):
+        # x is a torch tensor [1, 3, H, W]
+        x_np = x.cpu().numpy()
+        ort_inputs = {self.input_name: x_np}
+        ort_outs = self.session.run(None, ort_inputs)
+        return torch.from_numpy(ort_outs[0]).to(self.device)
+
+    def to(self, device):
+        # ONNX Session is already bound to provider (CUDA/CPU) in __init__
+        self.device = device
+
+    def eval(self):
+        pass
+
 def load_model(model_path, device):
+    if model_path.lower().endswith(".onnx"):
+        return ONNXModelWrapper(model_path, device)
+        
     loader = ModelLoader()
     model = loader.load_from_file(model_path)
     if not isinstance(model, ImageModelDescriptor):

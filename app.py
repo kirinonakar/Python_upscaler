@@ -94,7 +94,7 @@ def get_model_list():
     if not os.path.exists(model_dir):
         return []
     files = os.listdir(model_dir)
-    valid_extensions = (".pth", ".safetensors")
+    valid_extensions = (".pth", ".safetensors", ".onnx")
     models = sorted([f for f in files if f.endswith(valid_extensions)])
     return models
 
