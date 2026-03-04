@@ -4,6 +4,10 @@ import cv2
 from PIL import Image
 from spandrel import ModelLoader, ImageModelDescriptor
 import os
+from sdpa_patch import apply_sdpa_patches
+
+# Apply SDPA patches for SwinIR, HAT, and DAT
+apply_sdpa_patches()
 
 class ONNXModelWrapper:
     def __init__(self, model_path, device):
