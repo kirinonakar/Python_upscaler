@@ -7,6 +7,7 @@ A powerful and user-friendly image upscaling toolset that supports both **Web (G
 ## 🚀 Key Features
 
 - **Multi-Model Support**: Use `.pth`, `.safetensors`, and `.onnx` models seamlessly.
+   - **Note**: Only support fp32 onnx model. In case of fp16 model (e.g., 4xNomos8kSCHAT-L.onnx, 4xNomos8kSCHAT-S.onnx), please convert it to fp32. (using https://github.com/kirinonakar/Python_onnx, convert_fp32.py)
 - **Dual Interface**:
   - **Desktop (GUI)**: Drag & Drop multiple images for fast batch processing.
   - **Web (Gradio)**: Modern web-based interface with preview capabilities.
