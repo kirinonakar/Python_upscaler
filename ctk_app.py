@@ -240,6 +240,13 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         
         self.set_status(f"⏳ 모델 로딩 중: {model_name}...")
         try:
+            # Clear previous model explicitly to free VRAM
+            if self.current_model:
+                del self.current_model
+                self.current_model = None
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            
             model = upscaler_engine.load_model(model_path, DEVICE)
             self.current_model = model
             self.loaded_model_path = model_path

@@ -15,11 +15,14 @@ class ONNXModelWrapper:
         
         providers = ['CPUExecutionProvider']
         if 'cuda' in str(device):
-            # Check if CUDA provider is available
             if 'CUDAExecutionProvider' in ort.get_available_providers():
                 providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
         
-        self.session = ort.InferenceSession(model_path, providers=providers)
+        options = ort.SessionOptions()
+        options.log_severity_level = 3 # Silence warnings
+        options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        
+        self.session = ort.InferenceSession(model_path, providers=providers, sess_options=options)
         self.input_name = self.session.get_inputs()[0].name
         self.device = device
         
@@ -60,7 +63,16 @@ def load_model(model_path, device):
     model = loader.load_from_file(model_path)
     if not isinstance(model, ImageModelDescriptor):
         raise ValueError("Unsupported model format")
-    model.to(device)
+    
+    # Optimization: Channels Last memory format for better Tensor Core utilization
+    if "cuda" in str(device):
+        try:
+            model.to(device, memory_format=torch.channels_last)
+        except Exception:
+            model.to(device)
+    else:
+        model.to(device)
+        
     model.eval()
     return model
 
@@ -69,9 +81,9 @@ def process_tiled(img_np, model, device, tile_size=512, overlap=32, progress_cal
     scale = getattr(model, 'scale', 4)
     multiple = 64 # Safe for most models (HAT, SwinIR, etc.)
     
-    # Output canvas
+    # Output canvas (Optimization: Use uint8 to save significant CPU RAM)
     output_h, output_w = h * scale, w * scale
-    output = np.zeros((output_h, output_w, c), dtype=np.float32)
+    output = np.zeros((output_h, output_w, c), dtype=np.uint8)
     
     # Pad input to handle overlap context
     img_padded = cv2.copyMakeBorder(img_np, overlap, overlap, overlap, overlap, cv2.BORDER_REFLECT)
@@ -104,8 +116,11 @@ def process_tiled(img_np, model, device, tile_size=512, overlap=32, progress_cal
                 tile_context = cv2.copyMakeBorder(tile_context, 0, ph, 0, pw, cv2.BORDER_REFLECT)
             
             # Process tile
-            tile_tensor = torch.from_numpy(tile_context).permute(2, 0, 1).float().div(255).unsqueeze(0).to(device)
-            with torch.no_grad():
+            # Optimization: Use channels_last if on CUDA
+            m_format = torch.channels_last if "cuda" in str(device) else torch.contiguous_format
+            tile_tensor = torch.from_numpy(tile_context).permute(2, 0, 1).float().div(255).unsqueeze(0).to(device, memory_format=m_format)
+            
+            with torch.inference_mode(): # Optimization: Slightly faster than no_grad
                 output_tile_tensor = model(tile_tensor)
             
             output_tile = output_tile_tensor.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().numpy()
@@ -122,12 +137,17 @@ def process_tiled(img_np, model, device, tile_size=512, overlap=32, progress_cal
             
             res_tile = output_tile[sy:ey, sx:ex, :]
             
-            # Place in output
-            output[y*scale:y_end*scale, x*scale:x_end*scale, :] = res_tile
+            # Place in output (Optimization: Convert tile to uint8 immediately)
+            res_tile_uint8 = (res_tile * 255.0).round().astype(np.uint8)
+            output[y*scale:y_end*scale, x*scale:x_end*scale, :] = res_tile_uint8
             
-            # Free memory
+            # Free memory proactively
             del output_tile_tensor
             del tile_tensor
+            
+            # Optimization: Clear CUDA cache occasionally to prevent fragmentation
+            if tile_count % 4 == 0 and "cuda" in str(device):
+                torch.cuda.empty_cache()
             
     return output
 
@@ -152,8 +172,10 @@ def run_upscale(image, model, device, target_size=None, use_tiling=True, tile_si
         if ph > 0 or pw > 0:
             img_np = cv2.copyMakeBorder(img_np, 0, ph, 0, pw, cv2.BORDER_REFLECT)
 
-        img_tensor = torch.from_numpy(img_np).permute(2, 0, 1).float().div(255).unsqueeze(0).to(device)
-        with torch.no_grad():
+        m_format = torch.channels_last if "cuda" in str(device) else torch.contiguous_format
+        img_tensor = torch.from_numpy(img_np).permute(2, 0, 1).float().div(255).unsqueeze(0).to(device, memory_format=m_format)
+        
+        with torch.inference_mode():
             output_tensor = model(img_tensor)
         output_np = output_tensor.squeeze(0).permute(1, 2, 0).clamp(0, 1).cpu().numpy()
 
@@ -161,13 +183,19 @@ def run_upscale(image, model, device, target_size=None, use_tiling=True, tile_si
         if ph > 0 or pw > 0:
             output_np = output_np[:output_np.shape[0]-ph*scale, :output_np.shape[1]-pw*scale, :]
     
-    # Convert to PIL
-    output_np = (output_np * 255.0).round().astype(np.uint8)
+    # Convert to PIL (output_np is already uint8 if tiled)
+    if output_np.dtype != np.uint8:
+        output_np = (output_np * 255.0).round().astype(np.uint8)
+    
     upscaled_pil = Image.fromarray(output_np)
 
     # Resize to target size if provided (Native model output might be x4, but user wanted x2)
     if target_size and upscaled_pil.size != target_size:
         upscaled_pil = upscaled_pil.resize(target_size, Image.Resampling.LANCZOS)
+    
+    # Final VRAM Cleanup
+    if "cuda" in str(device):
+        torch.cuda.empty_cache()
     
     return upscaled_pil
 
