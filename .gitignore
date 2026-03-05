@@ -4,6 +4,9 @@ __pycache__/
 *$py.class
 
 model_path.txt
+*.onnx
+*.safetensors
+*.pth
 
 # C extensions
 *.so
