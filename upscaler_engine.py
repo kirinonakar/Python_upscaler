@@ -23,7 +23,8 @@ class ONNXModelWrapper:
         options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         
         self.session = ort.InferenceSession(model_path, providers=providers, sess_options=options)
-        self.input_name = self.session.get_inputs()[0].name
+        self.input_names = [i.name for i in self.session.get_inputs()]
+        self.input_name = self.input_names[0] # Primary image input
         self.device = device
         
         # Try to determine scale
@@ -36,7 +37,11 @@ class ONNXModelWrapper:
             else:
                 # Dummy run check
                 dummy_input = np.zeros((1, 3, 64, 64), dtype=np.float32)
-                ort_outs = self.session.run(None, {self.input_name: dummy_input})
+                ort_inputs = {self.input_name: dummy_input}
+                if "alpha" in self.input_names:
+                    ort_inputs["alpha"] = np.array(1, dtype=np.int64)
+                
+                ort_outs = self.session.run(None, ort_inputs)
                 self.scale = ort_outs[0].shape[2] // 64
         except Exception as e:
             print(f"Warning: Could not determine ONNX model scale, defaulting to 4. Error: {e}")
@@ -45,6 +50,11 @@ class ONNXModelWrapper:
         # x is a torch tensor [1, 3, H, W]
         x_np = x.cpu().numpy()
         ort_inputs = {self.input_name: x_np}
+        
+        # Handle specialized inputs like 'alpha' (common in CUGAN)
+        if "alpha" in self.input_names:
+            ort_inputs["alpha"] = np.array(1, dtype=np.int64)
+            
         ort_outs = self.session.run(None, ort_inputs)
         return torch.from_numpy(ort_outs[0]).to(self.device)
 

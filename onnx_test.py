@@ -4,7 +4,7 @@ import onnxruntime as ort
 print("사용 가능한 Provider:", ort.get_available_providers())
 
 # 2. 강제로 GPU 세션을 열어보기 (경로에는 실제 모델 경로를 입력하세요)
-model_path = "4xRealWebPhoto_v4_drct-l_fp32.onnx"
+model_path = "RealCUGAN_up4x-latest-no-denoise.onnx"
 
 try:
     session = ort.InferenceSession(
