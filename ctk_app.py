@@ -45,7 +45,7 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
             self.TkdndVersion = None
 
         self.title("AI Image Upscaler (Desktop)")
-        self.geometry("800x550")
+        self.geometry("800x600")
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
@@ -129,9 +129,27 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.preview_frame.drop_target_register(DND_FILES)
         self.preview_frame.dnd_bind('<<Drop>>', self.handle_drop)
 
-        # 4. Progress Bar (More compact)
+        # 4. Output Folder
+        self.output_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.output_frame.grid(row=3, column=0, padx=20, pady=(10, 5), sticky="ew")
+        self.output_frame.columnconfigure(1, weight=1)
+
+        self.label_output = ctk.CTkLabel(self.output_frame, text="출력 경로:")
+        self.label_output.grid(row=0, column=0, padx=(0, 10), pady=0)
+
+        self.output_var = ctk.StringVar(value="원본 폴더 (기본값)")
+        self.output_entry = ctk.CTkEntry(self.output_frame, textvariable=self.output_var, state="disabled")
+        self.output_entry.grid(row=0, column=1, padx=0, pady=0, sticky="ew")
+
+        self.btn_select_output = ctk.CTkButton(self.output_frame, text="폴더 선택", width=80, command=self.select_output_folder)
+        self.btn_select_output.grid(row=0, column=2, padx=(10, 0), pady=0)
+
+        self.btn_reset_output = ctk.CTkButton(self.output_frame, text="기본값 (원본)", width=80, command=self.reset_output_folder)
+        self.btn_reset_output.grid(row=0, column=3, padx=(10, 0), pady=0)
+
+        # 5. Progress Bar (More compact)
         self.progress_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.progress_frame.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
+        self.progress_frame.grid(row=4, column=0, padx=20, pady=5, sticky="ew")
         self.progress_frame.columnconfigure(0, weight=1)
 
         self.progress_bar = ctk.CTkProgressBar(self.progress_frame)
@@ -141,9 +159,9 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         self.progress_label = ctk.CTkLabel(self.progress_frame, text="0 / 0", width=80)
         self.progress_label.grid(row=0, column=1, padx=10)
 
-        # 5. Buttons
+        # 6. Buttons
         self.footer_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.footer_frame.grid(row=4, column=0, padx=20, pady=(10, 20), sticky="ew")
+        self.footer_frame.grid(row=5, column=0, padx=20, pady=(10, 20), sticky="ew")
         self.footer_frame.columnconfigure(0, weight=1)
 
         self.run_btn = ctk.CTkButton(
@@ -155,12 +173,20 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         )
         self.run_btn.grid(row=0, column=0, sticky="ew")
 
-        # 6. Status Bar
+        # 7. Status Bar
         self.status_bar = ctk.CTkLabel(self, text="준비됨", anchor="w", padx=20)
-        self.status_bar.grid(row=5, column=0, sticky="ew", pady=(0, 10))
+        self.status_bar.grid(row=6, column=0, sticky="ew", pady=(0, 10))
 
         if self.model_list:
             self.model_dropdown.set(self.model_list[0])
+
+    def select_output_folder(self):
+        folder = ctk.filedialog.askdirectory(title="출력 폴더 선택")
+        if folder:
+            self.output_var.set(folder)
+
+    def reset_output_folder(self):
+        self.output_var.set("원본 폴더 (기본값)")
 
     def get_model_list(self):
         model_dir = get_model_dir()
@@ -183,11 +209,19 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
         
         valid_paths = []
         
+        valid_extensions = ('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tif', '.tiff')
+        
         for path in paths:
             if os.path.isfile(path):
                 ext = os.path.splitext(path)[1].lower()
-                if ext in ('.png', '.jpg', '.jpeg', '.webp', '.bmp'):
+                if ext in valid_extensions:
                     valid_paths.append(path)
+            elif os.path.isdir(path):
+                for root, _, files in os.walk(path):
+                    for file in files:
+                        ext = os.path.splitext(file)[1].lower()
+                        if ext in valid_extensions:
+                            valid_paths.append(os.path.join(root, file))
         
         if valid_paths:
             self.image_paths = valid_paths
@@ -298,7 +332,11 @@ class UpscalerApp(ctk.CTk, TkinterDnD.DnDWrapper):
                 )
                 
                 # Save
-                save_path = os.path.join(os.path.dirname(path), f"{os.path.splitext(os.path.basename(path))[0]}_upscaled.png")
+                out_dir = self.output_var.get()
+                if out_dir == "원본 폴더 (기본값)":
+                    out_dir = os.path.dirname(path)
+                
+                save_path = os.path.join(out_dir, f"{os.path.splitext(os.path.basename(path))[0]}_upscaled.png")
                 upscaled_pil.save(save_path, "PNG")
 
             except Exception as e:

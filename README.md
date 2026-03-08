@@ -45,7 +45,7 @@ A powerful and user-friendly image upscaling toolset that supports both **Web (G
 ## 🚀 Usage
 
 ### Desktop Version (CustomTkinter)
-The desktop version is optimized for batch processing. Simply drag and drop your image files.
+The desktop version is optimized for batch processing. Simply drag and drop your image files or folders.
 - Run: `run_ctk_upscaler.bat` or `python ctk_app.py`
 
 ### Web Version (Gradio)
