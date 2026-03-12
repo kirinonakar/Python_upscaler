@@ -13,6 +13,8 @@ A powerful and user-friendly image upscaling toolset that supports both **Web (G
   - **Web (Gradio)**: Modern web-based interface with preview capabilities.
 - **Batch Processing**: Speed up your workflow by dropping dozens of images at once.
 - **Flexible Scaling**: Choose between fixed ratios (`x2`, `x3`, `x4`) or target pixel counts (`2M`, `3M`, `4M` pixels).
+- **Batch Background Removal**: Automatically remove image backgrounds using ONNX models (RMBG, BiRefNet, InSPyReNet).
+- **32bit BMP Support**: Option to save as 32bit BMP with alpha channel (transparent background) along with standard PNG.
 - **Tiling & Overlap Support**: Process high-resolution images by splitting them into tiles (256x256 or 512x512) with overlap to avoid VRAM issues and edge artifacts.
    - **Note**: In case of HAT model, 256x256 tile size is recommended due to memory limitation.
 - **Auto-Save**: Processed images are automatically saved as high-quality `.png` files in the source folder with an `_upscaled` suffix.
@@ -52,11 +54,13 @@ The desktop version is optimized for batch processing. Simply drag and drop your
 The web version provides a clean preview and easy access from any browser.
 - Run: `run_upscaler.bat` or `python app.py`
 
-## ⚙️ Configuration
+### Background Remover (CustomTkinter)
+Dedicated interface for removing image backgrounds in batch.
+- Run: `run_rmbg.bat` or `python rmbg_app.py`
 
-Create or edit `model_path.txt` in the root directory to specify where your model files (`.pth`, `.safetensors`, `.onnx`) are located. If the file is missing, the app will default to its own directory.
+Create or edit `model_path.txt` (for upscaler) and `rmbg_model_path.txt` (for background remover) in the root directory to specify where your model files are located.
 
-**Example `model_path.txt`:**
+**Example `model_path.txt` / `rmbg_model_path.txt`:**
 ```text
 D:\Models\Upscale
 ```
@@ -65,9 +69,13 @@ D:\Models\Upscale
 
 - `app.py`: The Gradio-based web application.
 - `ctk_app.py`: The CustomTkinter-based desktop application.
-- `model_path.txt`: Configuration for model directory.
+- `rmbg_app.py`: The background removal application.
+- `rmbg_engine.py`: Inference engine for background removal.
+- `model_path.txt`: Configuration for upscaler model directory.
+- `rmbg_model_path.txt`: Configuration for background removal model directory.
 - `run_upscaler.bat`: Batch script to launch the web UI.
 - `run_ctk_upscaler.bat`: Batch script to launch the desktop GUI.
+- `run_rmbg.bat`: Batch script to launch the background remover GUI.
 
 ## 📜 License
 
